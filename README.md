@@ -1,4 +1,4 @@
-# RotLab — 회전 변환 실습기
+# RotLab
 
 <img src="assets/hero.gif" width="640">
 
