@@ -1,0 +1,21 @@
+{
+  "name": "rotlab",
+  "version": "1.0.0",
+  "description": "RotLab — rotation transform lab (math core)",
+  "main": "src/verify.js",
+  "scripts": {
+    "vendor": "node tools/vendor.mjs",
+    "verify": "node tests/run.node.mjs",
+    "serve": "python -m http.server 8124",
+    "test": "node tests/run.node.mjs"
+  },
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

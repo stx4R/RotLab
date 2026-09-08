@@ -1,0 +1,528 @@
+/* RotLab — 어두운 배경, 산세리프, 장식 최소화 */
+
+:root {
+  --bg:        #14161a;
+  --panel:     #191c21;
+  --line:      #262b32;
+  --line-soft: #1f242a;
+  --fg:        #d7dbe0;
+  --fg-dim:    #79828e;
+  --fg-faint:  #5a626d;
+
+  --axis-z: #3a7ae8; /* yaw   */
+  --axis-y: #2f9e6f; /* pitch */
+  --axis-x: #e8853a; /* roll  */
+
+  --warn:   #e8b33a;
+  --danger: #f87171;
+  --ok:     #4ade80;
+
+  --panel-w: 344px;
+
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: grid;
+  grid-template-columns: 1fr var(--panel-w);
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", Roboto, sans-serif;
+  overflow: hidden;
+}
+
+/* ── 뷰포트 ── */
+
+#stage {
+  position: relative;
+  min-width: 0;
+}
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+#view:active { cursor: grabbing; }
+
+#hint {
+  position: absolute;
+  left: 18px;
+  bottom: 16px;
+  color: var(--fg-faint);
+  font-size: 12px;
+  letter-spacing: .02em;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ── 패널 ── */
+
+#panel {
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  padding: 22px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+#panel header h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.tagline {
+  margin: 4px 0 0;
+  color: var(--fg-dim);
+  font-size: 12px;
+}
+
+.section-title {
+  color: var(--fg-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  margin-bottom: 8px;
+}
+
+/* ── 슬라이더 ── */
+
+.sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.slider {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.slider label {
+  font-size: 12px;
+  color: var(--fg-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slider .sym {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.axis-tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: .04em;
+}
+
+.slider[data-axis="z"] .axis-tag { background: color-mix(in srgb, var(--axis-z) 22%, transparent); color: var(--axis-z); }
+.slider[data-axis="y"] .axis-tag { background: color-mix(in srgb, var(--axis-y) 22%, transparent); color: var(--axis-y); }
+.slider[data-axis="x"] .axis-tag { background: color-mix(in srgb, var(--axis-x) 22%, transparent); color: var(--axis-x); }
+
+.slider output {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--fg);
+  min-width: 52px;
+  text-align: right;
+}
+
+.slider input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0;
+  height: 20px;
+}
+
+.slider[data-axis="z"] input { accent-color: var(--axis-z); }
+.slider[data-axis="y"] input { accent-color: var(--axis-y); }
+.slider[data-axis="x"] input { accent-color: var(--axis-x); }
+
+/* ── 버튼 ── */
+
+.buttons {
+  display: flex;
+  gap: 8px;
+}
+
+button {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #20242b;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+button:hover { background: #272c34; border-color: #333a44; }
+button:active { background: #1b1f25; }
+
+button.primary {
+  width: 100%;
+  background: #22303f;
+  border-color: #2c4257;
+  color: #9ec9ff;
+}
+
+button.primary:hover { background: #26384a; }
+
+/* ── 계기판 ── */
+
+.gauge {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 14px;
+  background: #16191e;
+}
+
+.gauge-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.gauge-row .k {
+  color: var(--fg-dim);
+  font-size: 12px;
+  letter-spacing: .04em;
+}
+
+.gauge-row .v {
+  font-variant-numeric: tabular-nums;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.dof {
+  margin-top: 10px;
+  padding: 5px 9px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  color: var(--ok);
+}
+
+.dof.warn {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+}
+
+.dof.locked {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+.gauge.warn .gauge-row .v { color: var(--warn); }
+.gauge.locked .gauge-row .v { color: var(--danger); }
+
+.gauge-note {
+  margin-top: 10px;
+  color: var(--fg-faint);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* ── 행렬 ── */
+
+.mat {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px 6px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #16191e;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.mat span.neg { color: #b9c2cd; }
+.mat span.zero { color: var(--fg-faint); }
+
+.degen {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--fg-faint);
+}
+
+.degen.on { color: var(--danger); }
+
+/* ── 실증 ── */
+
+.demo {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.proof {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #16191e;
+  color: var(--fg-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.proof .hi { color: var(--ok); }
+.proof .lo { color: var(--danger); }
+.proof .em { color: var(--fg); }
+
+/* ── 좁은 화면 ── */
+
+@media (max-width: 860px) {
+  body {
+    grid-template-columns: 1fr;
+    grid-template-rows: 45vh 1fr;
+    overflow: auto;
+  }
+  #panel { border-left: none; border-top: 1px solid var(--line); }
+}
+
+/* ─────────────── 3단계: 모드 토글 / 쿼터니언 / 보간 비교 ─────────────── */
+
+:root {
+  --m-euler: #d95f8b;  /* 오일러 선형보간 */
+  --m-slerp: #35d0c0;  /* slerp */
+}
+
+/* 모드 토글 */
+
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #16191e;
+}
+
+.seg button {
+  flex: 1;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: 12.5px;
+}
+
+.seg button:hover { background: #20242b; color: var(--fg); }
+
+.seg button.on {
+  background: #2b323c;
+  color: #fff;
+  font-weight: 600;
+}
+
+.slider[data-axis="none"] input { accent-color: #8a93a0; }
+
+/* 쿼터니언 표시 */
+
+.qbox {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #16191e;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.qrow {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.qrow .k {
+  color: var(--fg-dim);
+  font-size: 11px;
+  min-width: 40px;
+  letter-spacing: .04em;
+}
+
+.qrow .v {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  word-break: break-all;
+}
+
+.qrow .v.undecidable { color: var(--danger); }
+
+/* A / B 슬롯 */
+
+.ab {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.ab-slot {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #16191e;
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ab-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.ab-name { font-weight: 700; font-size: 13px; }
+
+.ab-flag {
+  font-size: 10px;
+  color: var(--fg-faint);
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #20242b;
+}
+
+.ab-flag.set { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.ab-flag.degen { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+
+.ab-q {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+
+.ab-slot button { font-size: 11.5px; padding: 5px 6px; }
+
+/* 범례 */
+
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+}
+
+.legend span { display: flex; align-items: center; gap: 7px; }
+.legend em { color: var(--fg-faint); font-style: normal; font-size: 10.5px; }
+
+.legend i {
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.legend i.sw-euler { background: var(--m-euler); }
+.legend i.sw-slerp { background: var(--m-slerp); }
+
+/* 보조 버튼 */
+
+.subtle-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+button.link {
+  flex: none;
+  width: auto;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--fg-faint);
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+button.link:hover { color: var(--fg); background: none; }
+
+.compare {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 8px;
+}
+
+.proof .me { color: var(--m-euler); }
+.proof .ms { color: var(--m-slerp); }
+.proof .dim { color: var(--fg-faint); }
+
+/* 재생 진행 막대 */
+
+#playhead {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: #262b32;
+}
+
+#playbar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--m-euler), var(--m-slerp));
+}
+
+/* hidden 속성이 .sliders 의 display:flex 에 밀리지 않게.
+   (속성 선택자와 클래스 선택자는 명시도가 같아서 작성자 스타일이 이긴다) */
+[hidden] { display: none !important; }
+
+/* ─────────────── 4단계: 에셋 상태 표시 ─────────────── */
+
+#asset-note {
+  position: absolute;
+  left: 18px;
+  top: 16px;
+  max-width: min(560px, calc(100% - 36px));
+  padding: 7px 11px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  user-select: text;
+}
+
+#asset-note.fallback {
+  background: color-mix(in srgb, var(--warn) 15%, #14161a);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  color: var(--warn);
+}

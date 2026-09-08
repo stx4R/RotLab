@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RotLab — 수학 코어 검증</title>
+
+<!--
+  정적 서버가 필요하다 (ES 모듈은 file:// 에서 안 뜬다):
+      python -m http.server 8124
+  그다음 http://localhost:8124/tests/run.html 을 열고 콘솔(F12)을 본다.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "three": "../vendor/three.module.js"
+  }
+}
+</script>
+
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; padding: 2rem;
+    font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: #14161a; color: #d7dbe0;
+  }
+  h1 { font-size: 1.1rem; margin: 0 0 .25rem; color: #fff; letter-spacing: .02em; }
+  .sub { color: #79828e; margin-bottom: 1.5rem; }
+  table { border-collapse: collapse; width: 100%; max-width: 900px; }
+  th, td { padding: .45rem .8rem; text-align: left; border-bottom: 1px solid #262b32; }
+  th { color: #79828e; font-weight: 500; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pass { color: #4ade80; font-weight: 600; }
+  .fail { color: #f87171; font-weight: 600; }
+  tr.extra td { color: #79828e; }
+  .verdict { margin: 1.5rem 0 .5rem; padding: .8rem 1rem; border-radius: 6px; max-width: 900px; }
+  .verdict.ok { background: #10291a; color: #4ade80; border: 1px solid #1e4a2e; }
+  .verdict.ng { background: #2a1416; color: #f87171; border: 1px solid #4a1e22; }
+  .notes { color: #79828e; max-width: 900px; margin-top: 1rem; }
+  .notes div { margin: .2rem 0; }
+</style>
+</head>
+<body>
+
+<h1>RotLab — 수학 코어 검증</h1>
+<div class="sub" id="sub">실행 중…</div>
+<table id="table"></table>
+<div class="verdict" id="verdict" hidden></div>
+<div class="notes" id="notes"></div>
+
+<script type="module">
+import { runAll, printReport } from '../src/verify.js';
+
+// 콘솔이 본체다.
+const report = runAll();
+printReport(report);
+
+// 화면 표시는 덤.
+const fmt = (v) => (Number.isFinite(v) ? v.toExponential(3) : String(v));
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+document.getElementById('sub').textContent =
+  'three.js r' + report.threeVersion + '   ·   seed 0x' + report.seed.toString(16) +
+  '   ·   기준: 직접 구현 vs Three.js 내장';
+
+const row = (r, extra) =>
+  '<tr' + (extra ? ' class="extra"' : '') + '>' +
+    '<td>' + (r.id || '·') + '</td>' +
+    '<td>' + esc(r.name) + '</td>' +
+    '<td>' + esc(r.reference) + '</td>' +
+    '<td class="num">' + r.samples + '</td>' +
+    '<td class="num">' + fmt(r.maxError) + '</td>' +
+    '<td class="num">' + fmt(r.tolerance) + '</td>' +
+    '<td class="' + (r.passed ? 'pass' : 'fail') + '">' + (r.passed ? 'PASS' : 'FAIL') + '</td>' +
+  '</tr>';
+
+document.getElementById('table').innerHTML =
+  '<tr><th>#</th><th>항목</th><th>대조 대상</th><th class="num">표본</th>' +
+  '<th class="num">max |오차|</th><th class="num">허용치</th><th>결과</th></tr>' +
+  report.results.map((r) => row(r, false)).join('') +
+  report.extraResults.map((r) => row(r, true)).join('');
+
+const v = document.getElementById('verdict');
+v.hidden = false;
+v.className = 'verdict ' + (report.allPassed ? 'ok' : 'ng');
+v.textContent = report.allPassed
+  ? '6개 항목 전부 통과'
+  : '실패: ' + report.results.filter((r) => !r.passed).map((r) => '#' + r.id).join(', ') +
+    ' — 자세한 내용은 콘솔을 볼 것';
+
+const slerp = report.results.find((r) => r.id === 5);
+const gimbal = report.results.find((r) => r.id === 6);
+document.getElementById('notes').innerHTML =
+  '<div>5) dot&lt;0 쌍 ' + slerp.negativeDotPairs + '/' + slerp.pairs +
+  ' 포함 · max|오차| dot&lt;0: ' + fmt(slerp.maxErrorNegDot) +
+  ' · dot≥0: ' + fmt(slerp.maxErrorPosDot) + '</div>' +
+  '<div>6) θ=±90° 에서 max|det E| = ' + fmt(gimbal.maxSingularDet) +
+  ' (&lt; ' + fmt(gimbal.singularTolerance) + ' 필요, ' + gimbal.singularSamples + ' 표본) ' +
+  (gimbal.maxSingularDet < gimbal.singularTolerance ? 'OK' : 'NG') + '</div>' +
+  '<div>· 마지막 행은 추가 점검이며 6개 판정에는 포함되지 않는다.</div>' +
+  '<div>· 다른 씨앗으로 돌리려면 콘솔에서: ' +
+  esc("const m = await import('../src/verify.js'); m.printReport(m.runAll({ seed: 12345 }))") + '</div>';
+</script>
+
+</body>
+</html>

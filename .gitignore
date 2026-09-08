@@ -1,0 +1,11 @@
+node_modules/
+
+# vendor/ 는 일부러 커밋한다.
+# 레포를 클론한 직후 npm install 없이 정적 서버만 띄워도 앱이 떠야 하고,
+# three 와 GLTFLoader 의 버전이 항상 같아야 하기 때문이다.
+# 갱신은 npm install && npm run vendor.
+
+# assets/ 는 런타임 에셋이라 반드시 커밋한다.
+# 나중에 누가 *.glb 를 무시하도록 규칙을 넣더라도 이 파일은 예외로 남는다.
+!assets/
+!assets/plane.glb

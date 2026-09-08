@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RotLab — 회전 변환 실습기</title>
+<link rel="stylesheet" href="style.css">
+
+<!--
+  정적 서버가 필요하다 (ES 모듈은 file:// 에서 안 뜬다):
+      python -m http.server 8124
+  http://localhost:8124/
+
+  three 는 vendor/ 에서만 온다. CDN 은 쓰지 않는다.
+  vendor/ 는 레포에 커밋되므로 클론 직후 npm install 없이도 뜬다.
+  갱신은 npm install && npm run vendor.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js",
+    "three/addons/loaders/GLTFLoader.js": "./vendor/GLTFLoader.js"
+  }
+}
+</script>
+</head>
+<body>
+
+<main id="stage">
+  <canvas id="view"></canvas>
+  <div id="hint">드래그 — 궤도 · 휠 — 거리</div>
+  <div id="asset-note" hidden></div>
+  <div id="playhead" hidden><div id="playbar"></div></div>
+</main>
+
+<aside id="panel">
+
+  <header>
+    <h1>RotLab</h1>
+    <p class="tagline">ZYX 오일러 · R = R<sub>z</sub>(ψ)·R<sub>y</sub>(θ)·R<sub>x</sub>(φ)</p>
+  </header>
+
+  <div class="seg" role="tablist">
+    <button id="mode-euler" class="on" type="button">오일러각</button>
+    <button id="mode-quat" type="button">쿼터니언</button>
+  </div>
+
+  <!-- ── 오일러 모드 ── -->
+  <section class="sliders" id="euler-controls">
+    <div class="slider" data-axis="z">
+      <label for="yaw">yaw <span class="sym">ψ</span><span class="axis-tag">Z</span></label>
+      <input type="range" id="yaw" min="-180" max="180" step="1" value="0">
+      <output id="yaw-out">0°</output>
+    </div>
+    <div class="slider" data-axis="y">
+      <label for="pitch">pitch <span class="sym">θ</span><span class="axis-tag">Y</span></label>
+      <input type="range" id="pitch" min="-180" max="180" step="1" value="0">
+      <output id="pitch-out">0°</output>
+    </div>
+    <div class="slider" data-axis="x">
+      <label for="roll">roll <span class="sym">φ</span><span class="axis-tag">X</span></label>
+      <input type="range" id="roll" min="-180" max="180" step="1" value="0">
+      <output id="roll-out">0°</output>
+    </div>
+  </section>
+
+  <!-- ── 쿼터니언 모드 ── -->
+  <section class="sliders" id="quat-controls" hidden>
+    <div class="slider" data-axis="x">
+      <label for="ax">축 <span class="sym">x</span></label>
+      <input type="range" id="ax" min="-1" max="1" step="0.001" value="0">
+      <output id="ax-out">0.000</output>
+    </div>
+    <div class="slider" data-axis="y">
+      <label for="ay">축 <span class="sym">y</span></label>
+      <input type="range" id="ay" min="-1" max="1" step="0.001" value="0">
+      <output id="ay-out">0.000</output>
+    </div>
+    <div class="slider" data-axis="z">
+      <label for="az">축 <span class="sym">z</span></label>
+      <input type="range" id="az" min="-1" max="1" step="0.001" value="1">
+      <output id="az-out">1.000</output>
+    </div>
+    <div class="slider" data-axis="none">
+      <label for="ang">회전각 <span class="sym">α</span></label>
+      <input type="range" id="ang" min="-180" max="180" step="1" value="0">
+      <output id="ang-out">0°</output>
+    </div>
+    <div class="qbox">
+      <div class="qrow"><span class="k">q</span><span class="v" id="qdisp">—</span></div>
+      <div class="qrow"><span class="k">축 n̂</span><span class="v" id="ndisp">—</span></div>
+      <div class="qrow"><span class="k">오일러</span><span class="v" id="qeuler">—</span></div>
+    </div>
+  </section>
+
+  <section class="buttons">
+    <button id="to90" type="button">θ를 90°로</button>
+    <button id="reset" type="button">초기화</button>
+  </section>
+
+  <!-- ── 계기판 ── -->
+  <section class="gauge">
+    <div class="gauge-row">
+      <span class="k">det E</span>
+      <span class="v" id="det">1.0000</span>
+    </div>
+    <div class="dof" id="dof">자유도 3 — 정상</div>
+    <div class="gauge-note" id="det-note">det E = cos θ. 0 이 되면 E 가 특이행렬이 되어
+      어떤 각속도 ω 는 어떤 (φ̇, θ̇, ψ̇) 로도 만들 수 없다.</div>
+  </section>
+
+  <section class="matrix">
+    <div class="section-title">회전행렬 R</div>
+    <div class="mat" id="mat"></div>
+    <div class="degen" id="degen"></div>
+  </section>
+
+  <section class="demo">
+    <button id="prove" type="button" class="primary">짐벌락 실증</button>
+    <pre id="proof" class="proof">θ = 90° 로 보낸 뒤 눌러라.</pre>
+  </section>
+
+  <!-- ── 보간 비교 ── -->
+  <section class="compare">
+    <div class="section-title">보간 비교</div>
+
+    <div class="ab">
+      <div class="ab-slot">
+        <div class="ab-head">
+          <span class="ab-name">A</span>
+          <span class="ab-flag" id="a-flag">기본값</span>
+        </div>
+        <div class="ab-q" id="a-q">—</div>
+        <button id="setA" type="button">현재 자세로 지정</button>
+      </div>
+      <div class="ab-slot">
+        <div class="ab-head">
+          <span class="ab-name">B</span>
+          <span class="ab-flag" id="b-flag">기본값</span>
+        </div>
+        <div class="ab-q" id="b-q">—</div>
+        <button id="setB" type="button">현재 자세로 지정</button>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button id="play" type="button" class="primary">재생 (3초)</button>
+      <button id="toEdit" type="button">편집으로</button>
+    </div>
+
+    <div class="legend">
+      <span><i class="sw-euler"></i>오일러 선형보간 <em>왼쪽</em></span>
+      <span><i class="sw-slerp"></i>slerp <em>오른쪽</em></span>
+    </div>
+
+    <div class="subtle-actions">
+      <button id="nearAB" type="button" class="link">A≈B 로 맞추기 (0.005°)</button>
+      <button id="crossAB" type="button" class="link">짐벌락 가로지르게</button>
+    </div>
+
+    <pre id="stats" class="proof">재생을 누르면 결과가 여기 나온다.</pre>
+  </section>
+
+</aside>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
