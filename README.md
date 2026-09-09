@@ -5,11 +5,11 @@
 <sub>**프리셋 (a)** — yaw만 −180°~180°로 돌렸을 때. 바깥 Z링만 자기 축으로 자전하고
 안쪽 Y·X링과 기체는 거기 실려 돈다. `det E = 1.0000`, 자유도 3.</sub>
 
-오일러각·회전행렬·쿼터니언을 라이브러리 없이 직접 구현하고, 짐벌락과 보간 방식의 차이를
-화면과 숫자로 동시에 보여주는 도구다. Three.js는 렌더링(씬·카메라·조명·메시)에만 쓰였고
-**회전 수학은 한 줄도 라이브러리를 쓰지 않았다.** `THREE.Euler`·`THREE.Quaternion`·
-`Matrix4`의 회전 생성 메서드는 프로젝트 전체에서 `src/verify.js` 안에만 등장하며,
-거기서는 직접 구현을 대조할 **기준 답**으로만 쓰인다.
+오일러각, 회전행렬, 쿼터니언을 라이브러리 없이 직접 구현하고 짐벌락과 보간 방식의 차이를 화면과 숫자로 동시에 보여주는 도구입니다.  
+Three.js는 렌더링(씬·카메라·조명·메시)에만 쓰였고
+**회전 수학은 한 줄도 라이브러리를 쓰지 않았습니다.**  
+ `THREE.Euler`·`THREE.Quaternion`·`Matrix4`의 회전 생성 메서드는 프로젝트 전체에서 `src/verify.js` 안에만 동작하며,  
+거기서는 직접 구현을 대조할 **기준 답**으로만 사용하였습니다.
 
 ---
 
@@ -529,4 +529,3 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 |---|---|---|
 | `vendor/three.module.js`<br>`vendor/GLTFLoader.js` | **MIT** — Copyright © 2010-2025 three.js authors | three r185 재배포본. MIT 고지는 각 파일 상단 배너에 그대로 들어 있다 |
 | `vendor/fonts/PretendardVariable.woff2` | **SIL OFL 1.1** — Copyright © 2021 Kil Hyung-jin | 원문은 `vendor/fonts/OFL.txt`. 예약 폰트명 "Pretendard" |
-| `assets/plane.glb` | Meshy AI 생성물 | 코드가 아니라 에셋이다. 재배포 조건은 생성 시점의 Meshy 약관을 확인할 것 |
