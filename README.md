@@ -19,12 +19,13 @@
 python -m http.server 8124
 ```
 
-http://localhost:8124/ 를 연다. 검증 리포트는 http://localhost:8124/tests/run.html
-(결과는 콘솔에 출력된다).
+http://localhost:8124/ 를 연다. 검증 리포트는 패널 오른쪽 위 `✓6` 버튼으로 열린다
+(열 때 브라우저에서 직접 돌린 실측값이다). 콘솔 전용 러너는 http://localhost:8124/tests/run.html.
 
 의존성은 `vendor/`에 고정되어 있어 **`npm install` 없이 클론 직후 동작한다.**
 three r185를 esbuild로 의존까지 인라인한 단일 파일(`vendor/three.module.js`, 1.7MB)이고,
-`GLTFLoader`도 같은 버전으로 함께 고정했다. CDN은 쓰지 않는다.
+`GLTFLoader`도 같은 버전으로 함께 고정했다. 본문 폰트(Pretendard)도 `vendor/fonts/`에
+같이 넣었다. **CDN은 쓰지 않는다.**
 
 Node에서 검증만 돌리려면 `npm install && npm run verify`.
 
@@ -296,7 +297,7 @@ c₁·c₃ = (RzRy e₁)·e₃      = (cθcψ, cθsψ, −sin θ)·(0,0,1)      
 
 <img src="assets/interpolation.gif" width="640">
 
-<sub>**프리셋 (c)** — 왼쪽이 오일러 선형보간(자홍), 오른쪽이 slerp(청록). 같은 A에서
+<sub>**프리셋 (c)** — 왼쪽이 오일러 선형보간(빨강), 오른쪽이 slerp(흰색). 같은 A에서
 출발해 같은 B로 도착하지만 지나가는 길이 다르다. 궤적선은 기수 끝점의 자취다.</sub>
 
 ### 실측 (균일 t 격자 180스텝)
@@ -433,8 +434,9 @@ GLB 로드에 실패하면 **삼각대로 자동 폴백**하고 화면에 그 �
 | `src/scene.js` | 씬·조명·짐벌 링 3개·삼각대·카메라 궤도(OrbitControls 미사용). 내 행렬을 `Matrix4.set`으로 써 넣기만 한다 |
 | `src/model.js` | GLB 로딩과 `MODEL_AXIS_FIX` 축 보정, 크기 정규화, 폴백 |
 | `src/compare.js` | 오일러 lerp vs slerp 재생·궤적·프레임별 회전각 측정·통계 |
-| `src/main.js` | UI 배선 — 모드 토글, 계기판, 짐벌락 실증, A/B 지정과 재생 |
-| `index.html` / `style.css` | 레이아웃과 importmap(`three` → `vendor/`) |
+| `src/main.js` | UI 배선 — 프리셋 칩, 모드 토글, 계기판, 짐벌락 실증, A/B 지정과 재생, 검증 리포트 |
+| `index.html` / `style.css` | 레이아웃·디자인 토큰과 importmap(`three` → `vendor/`) |
+| `vendor/fonts/` | Pretendard Variable (커밋 대상). `@font-face`로 `style.css`가 직접 물린다 |
 | `vendor/three.module.js` | three r185 ESM 단일 파일 번들 (커밋 대상) |
 | `vendor/GLTFLoader.js` | 같은 버전의 GLTFLoader. `three`는 external로 남겨 인스턴스를 공유한다 |
 | `tools/vendor.mjs` | `npm run vendor` — node_modules에서 vendor/ 재생성 |
@@ -463,7 +465,8 @@ const R = window.rotlab, P = R.poseFromEuler;
 | **(d) θ̇·ψ̇·φ̇=0** | (−70, 80, 0) → (100, −80, 0) | 표준편차는 둘 다 1e-14인데 경로만 **+31.0%** 길다 | `R.setPoses(P(-70,80,0), P(100,-80,0)); R.play()` | — |
 | **(e) 경로 폭주** | (135, 85, 15) → (145, **95**, 5) | 요동 없이 경로만 **15.19배**. slerp 22.4° 대 오일러 339.7° | `R.setPoses(P(135,85,15), P(145,95,5)); R.play()` | — |
 
-패널 버튼으로도 갈 수 있다 — (b)는 `θ를 90°로`, (c)는 `짐벌락 가로지르게`.
+다섯 가지 모두 패널 맨 위의 **프리셋 칩**으로 바로 갈 수 있다. (a)·(b)는 자세를 잡고,
+(c)·(d)·(e)는 A·B를 잡은 뒤 곧바로 재생해 결과 시트를 띄운다.
 
 **한 가지 예외.** (b)의 `짐벌락 실증` 패널 출력은 버튼 클릭에만 붙어 있고
 `window.rotlab` 에는 없다. 다만 **그 안의 숫자는 노출된 함수만으로 그대로 재현된다.**
@@ -525,4 +528,5 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 | 대상 | 라이선스 | 비고 |
 |---|---|---|
 | `vendor/three.module.js`<br>`vendor/GLTFLoader.js` | **MIT** — Copyright © 2010-2025 three.js authors | three r185 재배포본. MIT 고지는 각 파일 상단 배너에 그대로 들어 있다 |
+| `vendor/fonts/PretendardVariable.woff2` | **SIL OFL 1.1** — Copyright © 2021 Kil Hyung-jin | 원문은 `vendor/fonts/OFL.txt`. 예약 폰트명 "Pretendard" |
 | `assets/plane.glb` | Meshy AI 생성물 | 코드가 아니라 에셋이다. 재배포 조건은 생성 시점의 Meshy 약관을 확인할 것 |

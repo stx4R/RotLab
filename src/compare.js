@@ -33,10 +33,15 @@ import { makeTripod, setMatrix } from './scene.js';
 
 /* ───────────────────────────── 상수 ───────────────────────────── */
 
-/** 두 방식의 식별색. 축 색(파랑/초록/주황) 과 겹치지 않게 골랐다. */
+/**
+ * 두 방식의 식별색. TDS 토큰이며 패널의 범례 스와치와 같은 색이다.
+ *   euler → red-500   oklch(0.628 0.218 22)
+ *   slerp → white
+ * 축 색(blue/green/orange-500) 과 겹치지 않는다.
+ */
 const METHOD_COLOR = {
-  euler: 0xd95f8b, // 자홍 — 오일러 선형보간 (왼쪽)
-  slerp: 0x35d0c0, // 청록 — slerp (오른쪽)
+  euler: 0xf03848, // red-500 — 오일러 선형보간 (왼쪽)
+  slerp: 0xffffff, // white   — slerp (오른쪽)
 };
 
 /** 좌우 배치 간격 (월드 X). 카메라 방위각을 −90° 로 두면 화면 좌우와 맞는다. */

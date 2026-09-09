@@ -15,10 +15,16 @@ import { rotX, rotY, rotZ, eulerToMatrix } from './euler.js';
 
 /* ───────────────────────────── 상수 ───────────────────────────── */
 
+/**
+ * 축 색 — TDS 토큰. 패널의 Z/Y/X 칩과 슬라이더 accent-color 가 같은 색을 쓴다.
+ *   blue-500   oklch(0.624 0.176 254)
+ *   green-500  oklch(0.493 0.143 154)
+ *   orange-500 oklch(0.748 0.183 56)
+ */
 const AXIS_COLOR = {
-  z: 0x3a7ae8, // yaw   파랑
-  y: 0x2f9e6f, // pitch 초록
-  x: 0xe8853a, // roll  주황
+  z: 0x2887ee, // yaw   blue-500
+  y: 0x007738, // pitch green-500
+  x: 0xff8800, // roll  orange-500
 };
 
 const BG = 0x14161a;

@@ -3,6 +3,9 @@
  *
  * 회전에 관한 숫자는 전부 1단계 모듈(euler.js / quat.js)이 낸다.
  * 화면에 찍히는 행렬과 씬에 적용되는 행렬은 같은 함수 호출 결과다.
+ *
+ * 화면은 Toss Design System 기반이다 (style.css 의 토큰).
+ * 이 파일은 그 화면의 상태 기계일 뿐, 수치는 여전히 수학 모듈에서만 온다.
  */
 
 import { eulerToMatrix, matrixToEuler, gimbalMeasure } from './euler.js';
@@ -26,20 +29,32 @@ const PLAY_MS = 3000;
 /** 완료 검증 3 번용 — A 와 B 를 이만큼만 떨어뜨린다 */
 const NEAR_IDENTICAL_DEG = 0.005;
 
+/** 토스트가 떠 있는 시간 */
+const TOAST_MS = 2400;
+
+/** 검증 리포트의 씨앗 전수 검사 범위 — 0 … SWEEP_SEEDS−1 */
+const SWEEP_SEEDS = 400;
+
 const $ = (id) => document.getElementById(id);
 
 const canvas = $('view');
 const scene = createScene(canvas);
 const compare = createCompare(scene);
 
+const PROOF_IDLE = 'θ를 90°로 보낸 뒤 눌러주세요.';
+
 /* ───────────────────────── 숫자 포맷 ───────────────────────── */
 
 /** −0.0000 이 뜨지 않게 아주 작은 값은 0 으로 접는다 */
 const fixed4 = (v) => (Math.abs(v) < 5e-5 ? '0.0000' : v.toFixed(4));
 const expo = (v) => (Math.abs(v) < 1e-300 ? '0.00e+0' : v.toExponential(2));
+const expo3 = (v) => (Number.isFinite(v) ? v.toExponential(3) : String(v));
+/** 허용치처럼 딱 떨어지는 값은 1e-12 로 짧게 (1.000e-12 은 표에서 시끄럽다) */
+const tolStr = (v) => (Number.isFinite(v) ? v.toExponential().replace('e+', 'e') : String(v));
 const sgn = (n) => (n < 0 ? '−' : '+') + Math.abs(n) + '°';
-const pad = (s, n) => String(s) + ' '.repeat(Math.max(0, n - String(s).length));
-const padL = (s, n) => ' '.repeat(Math.max(0, n - String(s).length)) + String(s);
+
+const esc = (s) =>
+  String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
 /** 두 3×3 행렬의 최대 절대 성분 차이 */
 function maxDiff(A, B) {
@@ -56,6 +71,7 @@ const qStr = (q) =>
 /* ───────────────────────── 상태 ───────────────────────── */
 
 const state = {
+  screen: 'lab', // 'lab' | 'verify'
   mode: 'euler', // 'euler' | 'quat'
   view: 'edit',  // 'edit' | 'compare'
 
@@ -75,18 +91,53 @@ const state = {
   poseB: null,
   aUser: false,
   bUser: false,
+
+  preset: 'c',
+  playing: false,
+  result: null,
 };
 
-/** 짐벌락을 가로지르는 기본 A/B */
-const PRESET_CROSS = {
-  // B 의 pitch 가 95° — θ=90° 극을 실제로 가로지른다.
-  // 분해하면 B 는 ψ−95 θ85 φ−170 이라 ψ 와 φ 가 크게 튄다.
-  // Δψ 175° · Δφ −175° — ±180° 를 피해 잡았다. 정확히 ±180° 면 래핑 방향이
-  // 원리적으로 미정이라 부동소수점 부호로 갈리고 수치가 재현되지 않는다.
-  // 오일러 보간은 그 먼 길을 돌고(측지선의 2.16배), slerp 는 최단호로 간다.
-  a: { yaw: 90, pitch: -45, roll: 5 },
-  b: { yaw: 85, pitch: 95, roll: 10 },
-};
+/**
+ * 프리셋 — README 의 촬영/재현용 표와 같은 값이다.
+ * angles 프리셋은 자세 하나, ab 프리셋은 A→B 한 쌍을 잡고 바로 재생한다.
+ */
+const PRESETS = [
+  {
+    key: 'a',
+    label: '정상',
+    note: '자유도 3, det E = 1.0000. Z링만 자전하고 안쪽 링은 실려 돌아요.',
+    angles: [45, 0, 0],
+  },
+  {
+    key: 'b',
+    label: '짐벌락',
+    note: 'det E = 0.0000, degenerate: true. yaw+30과 roll−30이 같은 회전이에요.',
+    angles: [90, 90, 5],
+  },
+  {
+    key: 'c',
+    label: '극 통과 보간',
+    // B 의 pitch 가 95° — θ=90° 극을 실제로 가로지른다.
+    // Δψ 175° · Δφ −175° — ±180° 를 피해 잡았다. 정확히 ±180° 면 래핑 방향이
+    // 원리적으로 미정이라 부동소수점 부호로 갈리고 수치가 재현되지 않는다.
+    note: 'θ=90° 극을 실제로 가로질러요. 오일러 std 0.3186° 대 slerp 8.37e-15°, 경로 초과 +115.9%.',
+    ab: [[90, -45, 5], [85, 95, 10]],
+  },
+  {
+    key: 'd',
+    label: 'θ̇·ψ̇·φ̇ = 0',
+    note: '표준편차는 둘 다 1e-14인데 경로만 +31.0% 길어요. 요동만 보면 놓치는 실패예요.',
+    ab: [[-70, 80, 0], [100, -80, 0]],
+  },
+  {
+    key: 'e',
+    label: '경로 폭주',
+    note: '요동 없이 경로만 15.19배. slerp가 22.4° 도는 동안 오일러는 339.7° 휘돌아요.',
+    ab: [[135, 85, 15], [145, 95, 5]],
+  },
+];
+
+const presetByKey = (key) => PRESETS.find((p) => p.key === key);
 
 const poseFromEuler = (yaw, pitch, roll) =>
   quat.normalize(quat.fromMatrix(eulerToMatrix(roll * DEG, pitch * DEG, yaw * DEG)));
@@ -140,6 +191,78 @@ function writeSliders() {
   sliders.ang.value = String(state.angle);
 }
 
+/* ───────────────────────── 프리셋 칩 ───────────────────────── */
+
+function renderChips() {
+  $('chips').innerHTML = PRESETS.map(
+    (p) =>
+      '<button type="button" class="chip' + (state.preset === p.key ? ' on' : '') +
+      '" data-preset="' + p.key + '">' + esc(p.label) + '</button>'
+  ).join('');
+}
+
+function setPresetNote(text) {
+  $('preset-note').textContent = text;
+}
+
+function pickPreset(p) {
+  if (p.angles) {
+    exitCompare();
+    if (state.mode !== 'euler') setMode('euler');
+    state.preset = p.key;
+    [state.yaw, state.pitch, state.roll] = p.angles;
+    writeSliders();
+    renderChips();
+    setPresetNote(p.note);
+    update();
+    // (b) 짐벌락 프리셋은 실증까지 한 번에 보여준다.
+    if (p.key === 'b') proveGimbalLock();
+    return;
+  }
+  state.preset = p.key;
+  state.poseA = poseFromEuler(...p.ab[0]);
+  state.poseB = poseFromEuler(...p.ab[1]);
+  state.aUser = state.bUser = false;
+  renderChips();
+  setPresetNote(p.note);
+  renderAB();
+  play();
+}
+
+/* ───────────────────────── 토스트 ───────────────────────── */
+
+let toastTimer = 0;
+
+function showToast(text) {
+  clearTimeout(toastTimer);
+  $('toast-body').textContent = text;
+  $('toast').hidden = false;
+  toastTimer = setTimeout(() => { $('toast').hidden = true; }, TOAST_MS);
+}
+
+/* ───────────────────────── 스테퍼 ───────────────────────── */
+
+function renderStepper() {
+  const done = (label) => ({ cls: 'done', mark: '✓', label });
+  const steps = [
+    done('A·B 지정'),
+    state.playing
+      ? { cls: 'now', mark: '2', label: '재생' }
+      : state.result ? done('재생') : { cls: '', mark: '2', label: '재생' },
+    state.result ? done('결과') : { cls: '', mark: '3', label: '결과' },
+  ];
+  $('stepper').innerHTML = steps
+    .map(
+      (s) =>
+        '<div class="step ' + s.cls + '">' +
+        '<div class="mark">' + s.mark + '</div>' +
+        '<div class="label">' + esc(s.label) + '</div>' +
+        '<div class="line"></div>' +
+        '</div>'
+    )
+    .join('');
+}
+
 /* ───────────────────────── 갱신 ───────────────────────── */
 
 function update() {
@@ -163,7 +286,7 @@ function update() {
       (aa.angle * RAD).toFixed(2) + '°';
     const qe = $('qeuler');
     if (pose.decomp.degenerate) {
-      qe.textContent = '분해 불가 (짐벌락 — φ 와 ψ 가 따로 정해지지 않는다)';
+      qe.textContent = '분해 불가 — 짐벌락이라 φ와 ψ가 따로 정해지지 않아요';
       qe.classList.add('undecidable');
     } else {
       qe.classList.remove('undecidable');
@@ -178,7 +301,7 @@ function update() {
   const det = gimbalMeasure(pose.ringAngles.phi, pose.ringAngles.theta, pose.ringAngles.psi);
   $('det').textContent = fixed4(det);
 
-  const gauge = document.querySelector('.gauge');
+  const gauge = $('gauge');
   const dof = $('dof');
   gauge.classList.remove('warn', 'locked');
   dof.classList.remove('warn', 'locked');
@@ -186,13 +309,16 @@ function update() {
   if (pose.decomp.degenerate) {
     gauge.classList.add('locked');
     dof.classList.add('locked');
-    dof.textContent = '짐벌락 — 자유도 2 (E 가 특이행렬)';
+    dof.textContent = '자유도 2';
+    $('dof-note').textContent = 'E가 특이행렬이에요';
   } else if (Math.abs(det) < NEAR_LOCK) {
     gauge.classList.add('warn');
     dof.classList.add('warn');
-    dof.textContent = '짐벌락 근접 — 자유도 3 → 2';
+    dof.textContent = '자유도 3 → 2';
+    $('dof-note').textContent = '짐벌락에 가까워요';
   } else {
-    dof.textContent = '자유도 3 — 정상';
+    dof.textContent = '자유도 3';
+    $('dof-note').textContent = '정상이에요';
   }
 
   $('mat').innerHTML = pose.R.flat()
@@ -205,8 +331,8 @@ function update() {
   const degen = $('degen');
   degen.classList.toggle('on', pose.decomp.degenerate);
   degen.textContent = pose.decomp.degenerate
-    ? 'matrixToEuler → degenerate: true  (φ 와 ψ 가 따로 정해지지 않는다)'
-    : 'matrixToEuler → degenerate: false  ·  φ ' +
+    ? 'matrixToEuler → degenerate: true — φ와 ψ가 따로 정해지지 않아요'
+    : 'matrixToEuler → degenerate: false · φ ' +
       (pose.decomp.phi * RAD).toFixed(1) + '°  θ ' +
       (pose.decomp.theta * RAD).toFixed(1) + '°  ψ ' +
       (pose.decomp.psi * RAD).toFixed(1) + '°';
@@ -228,8 +354,7 @@ function setMode(mode) {
 
   if (mode === 'quat') {
     // 축-각으로 옮긴다. 슬라이더가 α ∈ [−180,180] 이라 α > 180° 는 축을 뒤집어 접는다.
-    let axis = quat.toAxisAngle(pose.q).axis;
-    let angle = quat.toAxisAngle(pose.q).angle;
+    let { axis, angle } = quat.toAxisAngle(pose.q);
     if (angle > Math.PI) {
       angle = 2 * Math.PI - angle;
       axis = axis.map((v) => -v);
@@ -288,17 +413,17 @@ function proveGimbalLock() {
 
   $('proof').innerHTML =
     '<span class="em">θ ' + sgn(state.pitch) + '   φ ' + sgn(state.roll) + '   ψ ' + sgn(state.yaw) + '</span>\n' +
-    'θ = ±90° 에서 R 은 ' + combo + ' 에만 의존한다.\n\n' +
+    'θ = ±90°에서 R은 ' + combo + ' 에만 의존해요.\n\n' +
     '① yaw +30°  vs  roll ' + sgn(k * PROOF_DELTA) + '\n' +
     '     max|ΔR| = <span class="' + cls(eMatch) + '">' + expo(eMatch) + '</span>   ' + verdict(eMatch) + '\n' +
     '② yaw +30°  vs  roll ' + sgn(-k * PROOF_DELTA) + '   (대조군)\n' +
     '     max|ΔR| = <span class="' + cls(eOther) + '">' + expo(eOther) + '</span>   ' + verdict(eOther) + '\n' +
-    '③ φ +30° 와 ψ ' + sgn(-k * PROOF_DELTA) + ' 를 동시에\n' +
-    '     max|ΔR| = <span class="' + cls(eNull) + '">' + expo(eNull) + '</span>   R 이 아예 안 변한다\n\n' +
-    'δ 를 5°…180° 로 훑어도\n' +
+    '③ φ +30°와 ψ ' + sgn(-k * PROOF_DELTA) + ' 를 동시에\n' +
+    '     max|ΔR| = <span class="' + cls(eNull) + '">' + expo(eNull) + '</span>   R이 아예 안 변해요\n\n' +
+    'δ를 5°…180°로 훑어도\n' +
     '  ① max ' + expo(sweepMatch) + '    ③ max ' + expo(sweepNull) + '\n\n' +
     '<span class="em">자유도 3 → 2.</span> ③ 방향으로는 아무리 움직여도\n' +
-    '자세가 변하지 않는다 — 축 하나가 사라졌다.';
+    '자세가 변하지 않아요 — 축 하나가 사라졌어요.';
 }
 
 /* ───────────────────────── 보간 비교 ───────────────────────── */
@@ -325,11 +450,13 @@ function renderAB() {
         : 'φ' + (d.phi * RAD).toFixed(1) + ' θ' + (d.theta * RAD).toFixed(1) +
           ' ψ' + (d.psi * RAD).toFixed(1));
   }
+  renderStepper();
 }
 
 function enterCompare() {
   state.view = 'compare';
   compare.setVisible(true);
+  $('legend').hidden = false;
   $('hint').textContent = '비교 뷰 — 왼쪽 오일러 lerp · 오른쪽 slerp';
 }
 
@@ -338,65 +465,110 @@ function exitCompare() {
   compare.stop();
   compare.setVisible(false);
   state.view = 'edit';
+  state.playing = false;
+  $('legend').hidden = true;
   $('playhead').hidden = true;
-  $('play').disabled = false;
-  $('hint').textContent = '드래그 — 궤도 · 휠 — 거리';
+  setCta(false);
+  $('hint').textContent = '드래그로 궤도, 휠로 거리를 바꿔요';
+  renderStepper();
 }
 
-function statLine(label, s, cls) {
-  return '<span class="' + cls + '">' + pad(label, 12) + '</span>' +
-    padL(s.mean.toFixed(4) + '°', 11) +
-    padL(s.std.toFixed(4) + '°', 11) +
-    padL(s.max.toFixed(4) + '°', 11);
+function setCta(playing) {
+  const btn = $('play');
+  btn.disabled = playing;
+  btn.textContent = playing ? '재생 중…' : '3초 동안 재생하기';
 }
 
-function renderStats(result) {
-  const u = result.uniform;
-  const f = result.frame;
+/* ── 시트 ── */
 
-  const ratio =
-    u.slerp.std < 1e-9
-      ? 'slerp ≈ 0 (기계 정밀도 ' + expo(u.slerp.std) + '°)'
-      : '오일러 / slerp = ' + (u.euler.std / u.slerp.std).toFixed(1) + ' 배';
+/** 통계 표 12칸 — 머리행 + 오일러 + slerp */
+function statTable(a, b) {
+  const head = (t) => '<div class="head">' + t + '</div>';
+  const cell = (t) => '<div>' + t + '</div>';
+  const name = (t, cls) => '<div class="name ' + cls + '">' + t + '</div>';
+  const row = (label, cls, s) =>
+    name(label, cls) + cell(s.mean.toFixed(4) + '°') + cell(s.std.toFixed(4) + '°') +
+    cell(s.max.toFixed(4) + '°');
+  return (
+    '<div class="head name"></div>' + head('평균') + head('표준편차') + head('최대') +
+    row('오일러 lerp', 'euler', a) +
+    row('slerp', 'slerp', b)
+  );
+}
 
+function openSheet() {
+  $('sheet-scrim').hidden = false;
+  $('sheet').hidden = false;
+}
+
+function closeSheet() {
+  $('sheet-scrim').hidden = true;
+  $('sheet').hidden = true;
+}
+
+function renderSheet() {
+  const r = state.result;
+  if (!r) {
+    $('sheet-title').textContent = '아직 재생 결과가 없어요';
+    $('sheet-sub').textContent = '아래 재생 버튼을 누르면 두 방식의 통계가 여기 쌓여요.';
+    $('sheet-result').hidden = true;
+    return;
+  }
+
+  const u = r.uniform;
+  const f = r.frame;
   const excess = (u.euler.total / u.slerp.total - 1) * 100;
+  const sign = excess >= 0 ? '+' : '';
 
-  const degenNote =
-    result.plan.degenerateA || result.plan.degenerateB
-      ? '\n<span class="lo">주의 — ' +
-        (result.plan.degenerateA ? 'A' : '') +
-        (result.plan.degenerateA && result.plan.degenerateB ? '·' : '') +
-        (result.plan.degenerateB ? 'B' : '') +
-        ' 의 오일러 분해가 유일하지 않다 (degenerate).\n' +
-        '오일러 보간의 출발/도착 각 자체가 임의로 골라진 값이다.</span>\n'
-      : '';
+  $('sheet-title').textContent = '오일러 초과 ' + sign + excess.toFixed(2) + '%';
+  $('sheet-sub').textContent =
+    '같은 A에서 같은 B로 갔는데, 지나간 길이 달라요. 오일러 ' +
+    u.euler.total.toFixed(1) + '° 대 slerp ' + u.slerp.total.toFixed(1) + '°.';
+  $('sheet-result').hidden = false;
 
-  $('stats').innerHTML =
-    '<span class="em">균일 t 격자 · ' + u.steps + ' 스텝 · 프레임 지터 없음</span>\n' +
-    pad('', 12) + padL('평균', 11) + padL('표준편차', 10) + padL('최대', 11) + '\n' +
-    statLine('오일러 lerp', u.euler, 'me') + '\n' +
-    statLine('slerp', u.slerp, 'ms') + '\n' +
-    '표준편차  ' + ratio + '\n\n' +
-    '<span class="em">경로 길이 (총 회전각)</span>\n' +
-    '  오일러 ' + u.euler.total.toFixed(3) + '°   slerp ' + u.slerp.total.toFixed(3) + '°\n' +
-    '  측지선 ' + u.geodesic.toFixed(3) + '°   오일러 초과 ' +
-    (excess >= 0 ? '+' : '') + excess.toFixed(2) + '%\n' +
-    degenNote +
-    '\n<span class="em">실제 렌더 프레임 · 온전한 N=' + f.euler.n + ' · Δt ' +
-    f.meanDt.toFixed(1) + '±' + f.dtStd.toFixed(1) + 'ms</span>\n' +
-    statLine('오일러 lerp', f.euler, 'me') + '\n' +
-    statLine('slerp', f.slerp, 'ms') + '\n' +
-    '<span class="dim">처음·마지막 부분 프레임은 뺐다. Δt 지터는 두 방식 모두에 섞여 있다.\n' +
-    '순수한 비교는 위쪽 균일 격자 값이다.</span>';
+  $('grid-steps').textContent = '균일 t 격자 · ' + u.steps + ' 스텝';
+  $('stat-table').innerHTML = statTable(u.euler, u.slerp);
+  $('ratio-note').textContent =
+    u.slerp.std < 1e-9
+      ? 'slerp는 기계 정밀도 안에서 등속이에요 (' + expo(u.slerp.std) + '°)'
+      : '오일러가 slerp의 ' + (u.euler.std / u.slerp.std).toFixed(1) + '배로 요동해요';
+
+  $('excess').textContent = '오일러 초과 ' + sign + excess.toFixed(2) + '%';
+
+  const maxTotal = Math.max(u.euler.total, u.slerp.total, u.geodesic);
+  const barH = (v) => Math.max(4, (v / maxTotal) * 104).toFixed(1) + 'px';
+  $('euler-total').textContent = u.euler.total.toFixed(1) + '°';
+  $('slerp-total').textContent = u.slerp.total.toFixed(1) + '°';
+  $('geo-total').textContent = u.geodesic.toFixed(1) + '°';
+  $('euler-bar').style.height = barH(u.euler.total);
+  $('slerp-bar').style.height = barH(u.slerp.total);
+  $('geo-bar').style.height = barH(u.geodesic);
+
+  const degenerate = r.plan.degenerateA || r.plan.degenerateB;
+  $('degen-warn').hidden = !degenerate;
+  if (degenerate) {
+    $('degen-warn-body').textContent =
+      (r.plan.degenerateA ? 'A' : '') +
+      (r.plan.degenerateA && r.plan.degenerateB ? '·' : '') +
+      (r.plan.degenerateB ? 'B' : '') +
+      '의 오일러 분해가 유일하지 않아요 (degenerate). 오일러 보간의 출발·도착 각 자체가 ' +
+      '임의로 골라진 값이라, 아래 수치는 그 선택에 딸려 있어요.';
+  }
+
+  $('frame-note').textContent =
+    '온전한 N=' + f.euler.n + ' · Δt ' + f.meanDt.toFixed(1) + '±' + f.dtStd.toFixed(1) + 'ms';
+  $('frame-table').innerHTML = statTable(f.euler, f.slerp);
 }
 
 function play() {
-  if (!state.poseA || !state.poseB) return;
+  if (!state.poseA || !state.poseB || state.playing) return;
+  closeSheet();
   enterCompare();
+  state.playing = true;
   $('playhead').hidden = false;
   $('playbar').style.width = '0%';
-  $('play').disabled = true;
-  $('stats').textContent = '재생 중…';
+  setCta(true);
+  renderStepper();
 
   compare.play(state.poseA, state.poseB, {
     duration: PLAY_MS,
@@ -404,10 +576,101 @@ function play() {
       $('playbar').style.width = (t * 100).toFixed(1) + '%';
     },
     onDone: (result) => {
-      $('play').disabled = false;
-      renderStats(result);
+      state.playing = false;
+      state.result = result;
+      setCta(false);
+      renderStepper();
+      renderSheet();
+      openSheet();
     },
   });
+}
+
+/* ───────────────────────── 검증 리포트 ───────────────────────── */
+
+let verifyRan = false;
+
+function showScreen(screen) {
+  state.screen = screen;
+  $('lab').hidden = screen !== 'lab';
+  $('verify').hidden = screen !== 'verify';
+  document.body.style.overflow = screen === 'verify' ? '' : 'hidden';
+  if (screen === 'verify' && !verifyRan) {
+    verifyRan = true;
+    // 화면이 먼저 뜨고 나서 돌린다. 씨앗 400개 전수까지 1초 안쪽이다.
+    // rAF 가 아니라 setTimeout 인 이유 — 배경 탭에서는 rAF 가 멈춰서 리포트가 영영 안 뜬다.
+    setTimeout(runVerify, 0);
+  }
+  if (screen === 'lab') scene.resize();
+}
+
+async function runVerify() {
+  let m;
+  try {
+    m = await import('./verify.js');
+  } catch (err) {
+    $('verify-title').textContent = '검증을 돌리지 못했어요';
+    $('verify-sub').textContent = String(err && err.message ? err.message : err);
+    return;
+  }
+
+  const report = m.runAll();
+
+  // 씨앗 전수 검사 — 실패 재현성과 최악 오차를 이 자리에서 직접 잰다.
+  let sweepFails = 0;
+  let sweepWorst = 0;
+  for (let seed = 0; seed < SWEEP_SEEDS; seed++) {
+    const r = m.runAll({ seed, extras: false });
+    if (!r.allPassed) sweepFails++;
+    for (const x of r.results) if (x.maxError > sweepWorst) sweepWorst = x.maxError;
+  }
+
+  const failed = report.results.filter((r) => !r.passed);
+  const summary = document.querySelector('.card.summary');
+  summary.classList.toggle('ng', !report.allPassed);
+  $('verify-mark').textContent = report.allPassed ? '✓' : '!';
+  $('verify-title').textContent = report.allPassed
+    ? report.results.length + '개 항목 모두 통과했어요'
+    : failed.length + '개 항목이 실패했어요';
+  $('verify-sub').textContent =
+    '씨앗 ' + SWEEP_SEEDS + '개 전수로 실패 ' + sweepFails + '건';
+  $('verify-lead').innerHTML =
+    '직접 구현한 회전 수학을 three.js r' + esc(report.threeVersion) +
+    ' 내장 구현과 성분 단위로 대조했어요. 전 항목 최악 오차는 ' +
+    '<span class="num">' + expo3(sweepWorst) + '</span> 예요.';
+
+  $('verify-rows').innerHTML = report.results
+    .map(
+      (r) =>
+        '<div class="vrow' + (r.passed ? '' : ' ng') + '">' +
+        '<div class="n">' + r.id + '</div>' +
+        '<div class="main">' +
+        '<div class="item">' + esc(r.name) + '</div>' +
+        '<div class="ref">' + esc(r.reference) + ' · 표본 ' + r.samples + '</div>' +
+        '</div>' +
+        '<div class="right">' +
+        '<div class="err">' + expo3(r.maxError) + '</div>' +
+        '<div class="tol">기준 ' + tolStr(r.tolerance) + '</div>' +
+        '</div>' +
+        '</div>'
+    )
+    .join('');
+
+  const slerp = report.results.find((r) => r.id === 5);
+  const gimbal = report.results.find((r) => r.id === 6);
+
+  $('note-slerp').innerHTML =
+    '5번 표본에는 <code>dot(q₀,q₁) &lt; 0</code> 쌍이 ' +
+    slerp.negativeDotPairs + '/' + slerp.pairs +
+    ' 들어 있어요. 대척점 경우를 검사하지 못하면 검사 자체가 무의미하니, ' +
+    '그런 쌍이 하나도 없으면 실패로 처리해요.';
+
+  $('note-gimbal').innerHTML =
+    '6번은 θ=±90°에서 <code>|det E| = ' + expo3(gimbal.maxSingularDet) + '</code> (&lt; ' +
+    tolStr(gimbal.singularTolerance) + ' 요구)도 함께 확인해요.';
+
+  // 콘솔이 여전히 본체다.
+  m.printReport(report);
 }
 
 /* ───────────────────────── 배선 ───────────────────────── */
@@ -419,6 +682,13 @@ for (const el of Object.values(sliders)) {
     update();
   });
 }
+
+$('chips').addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.chip');
+  if (!btn) return;
+  const p = presetByKey(btn.dataset.preset);
+  if (p) pickPreset(p);
+});
 
 $('mode-euler').addEventListener('click', () => setMode('euler'));
 $('mode-quat').addEventListener('click', () => setMode('quat'));
@@ -439,7 +709,11 @@ $('reset').addEventListener('click', () => {
   writeSliders();
   update();
   scene.resetCamera();
-  $('proof').textContent = 'θ = 90° 로 보낸 뒤 눌러라.';
+  $('proof').textContent = PROOF_IDLE;
+});
+
+$('tipToggle').addEventListener('click', () => {
+  $('tip').hidden = !$('tip').hidden;
 });
 
 $('prove').addEventListener('click', () => {
@@ -452,6 +726,7 @@ $('setA').addEventListener('click', () => {
   state.aUser = true;
   exitCompare();
   renderAB();
+  showToast('A 자세로 지정했어요');
 });
 
 $('setB').addEventListener('click', () => {
@@ -459,10 +734,17 @@ $('setB').addEventListener('click', () => {
   state.bUser = true;
   exitCompare();
   renderAB();
+  showToast('B 자세로 지정했어요');
 });
 
 $('play').addEventListener('click', play);
-$('toEdit').addEventListener('click', exitCompare);
+
+$('openSheet').addEventListener('click', () => { renderSheet(); openSheet(); });
+$('closeSheet').addEventListener('click', closeSheet);
+$('sheet-scrim').addEventListener('click', closeSheet);
+
+$('openVerify').addEventListener('click', () => showScreen('verify'));
+$('closeVerify').addEventListener('click', () => showScreen('lab'));
 
 // A 와 B 를 거의 같은 자세로 놓아도 slerp 가 터지지 않는지 보이는 버튼.
 // Ω→0 이라 sin Ω 로 나누는 경로가 무너지는 구간이다.
@@ -473,14 +755,12 @@ $('nearAB').addEventListener('click', () => {
     quat.multiply(quat.fromAxisAngle([0.3, -0.7, 0.5], NEAR_IDENTICAL_DEG * DEG), q)
   );
   state.aUser = state.bUser = true;
-  renderAB();
-  play();
-});
-
-$('crossAB').addEventListener('click', () => {
-  state.poseA = poseFromEuler(PRESET_CROSS.a.yaw, PRESET_CROSS.a.pitch, PRESET_CROSS.a.roll);
-  state.poseB = poseFromEuler(PRESET_CROSS.b.yaw, PRESET_CROSS.b.pitch, PRESET_CROSS.b.roll);
-  state.aUser = state.bUser = false;
+  state.preset = '';
+  renderChips();
+  setPresetNote(
+    'A와 B를 0.005°만 떨어뜨렸어요. Ω→0이라 sin Ω로 나누는 경로가 무너지는 구간인데, ' +
+    'nlerp로 넘어가서 터지지 않아요.'
+  );
   renderAB();
   play();
 });
@@ -489,11 +769,17 @@ new ResizeObserver(() => scene.resize()).observe(canvas);
 
 /* ───────────────────────── 시작 ───────────────────────── */
 
-state.poseA = poseFromEuler(PRESET_CROSS.a.yaw, PRESET_CROSS.a.pitch, PRESET_CROSS.a.roll);
-state.poseB = poseFromEuler(PRESET_CROSS.b.yaw, PRESET_CROSS.b.pitch, PRESET_CROSS.b.roll);
+{
+  const p = presetByKey(state.preset);
+  state.poseA = poseFromEuler(...p.ab[0]);
+  state.poseB = poseFromEuler(...p.ab[1]);
+  renderChips();
+  setPresetNote(p.note);
+}
 
 readSliders();
 update();
+renderSheet();
 
 /* ─────────────────────── GLB 기체 로딩 ─────────────────────── */
 
@@ -501,11 +787,10 @@ update();
 // 에셋 로딩이 앱을 멈추게 하지 않는다.
 let assetState = { ok: false, pending: true };
 
-function showAssetNote(text, kind) {
-  const el = document.getElementById('asset-note');
+function showAssetNote(html) {
+  const el = $('asset-note');
   el.hidden = false;
-  el.className = kind;
-  el.textContent = text;
+  el.querySelector('.body').innerHTML = html;
 }
 
 loadAircraft().then((res) => {
@@ -516,8 +801,9 @@ loadAircraft().then((res) => {
     update();
   } else {
     showAssetNote(
-      'GLB 로드 실패 (' + MODEL_URL + ') — 삼각대로 폴백. ' + (res.error || ''),
-      'fallback'
+      '<b>기체 모델을 불러오지 못했어요</b><br>대신 삼각대로 보여드릴게요. ' +
+      '회전 수치는 그대로예요 — <code>' + esc(MODEL_URL) + '</code>' +
+      (res.error ? '<br>' + esc(res.error) : '')
     );
   }
 });
@@ -537,6 +823,8 @@ window.rotlab = {
   setPoses(qA, qB) {
     state.poseA = qA; state.poseB = qB;
     state.aUser = state.bUser = true;
+    state.preset = '';
+    renderChips();
     renderAB();
   },
   play,
